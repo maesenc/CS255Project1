@@ -37,16 +37,39 @@ var keys = {}; // association map of keys: group -> key
 // @return {String} Encryption of the plaintext, encoded as a string.
 function Encrypt(plainText, group) {
 	alert("Encrypt");
-  // CS255-todo: encrypt the plainText, using key for the group.
-  if ((plainText.indexOf('rot13:') == 0) || (plainText.length < 1)) {
-    // already done, or blank
-    alert("Try entering a message (the button works only once)");
-    return plainText;
-  } else {
-    // encrypt, add tag.
-    return 'rot13:' + rot13(plainText);
-  }
+	
+	var initializationVector = GetRandomValues(4);
+	var groupKey = [0,1,2,3];//keys[group]
+	
+	//alert("IV length: " + initializationVector.length);
+	
+	var bits = sjcl.codec.utf8String.toBits(plainText);
+	var cipher = new sjcl.cipher.aes(groupKey);
+	var cipherText = initializationVector.slice(0);
+	
+	for(var i=0 ; i<bits.length ; i = i+4) {
+		alert("i: " + i + "\nIV.length: " + initializationVector.length);
+		var xorWith = cipher.encrypt(initializationVector);
+		for(var j=0 ; j<4 && i+j<bits.length ; j++) {
+			cipherText.push(bits[i+j] ^ xorWith[j]);
+		}
+		initializationVector[3] = initializationVector[3] + 1;
+		
+	}
 
+	var output = "TEST: ";
+	output = output + sjcl.codec.base64.fromBits(cipherText,1,0);
+	return output;
+	
+	// CS255-todo: encrypt the plainText, using key for the group.
+	//if ((plainText.indexOf('rot13:') == 0) || (plainText.length < 1)) {
+		// already done, or blank
+		//alert("Try entering a message (the button works only once)");
+		//return plainText;
+	//} else {
+		// encrypt, add tag.
+		//return 'rot13:' + rot13(plainText);
+	//}
 }
 
 // Return the decryption of the message for the given group, in the form of a string.
@@ -56,7 +79,7 @@ function Encrypt(plainText, group) {
 // @param {String} group Group name.
 // @return {String} Decryption of the ciphertext.
 function Decrypt(cipherText, group) {
-		alert("Decrpyt");
+		//alert("Decrpyt");
 
   // CS255-todo: implement decryption on encrypted messages
 
@@ -75,8 +98,8 @@ function Decrypt(cipherText, group) {
 //
 // @param {String} group Group name.
 function GenerateKey(group) {
-		alert("Gen Key");
-
+		//alert("Gen Key");
+// REMEMBER!!: key is an array of 4 x 32bit values
   // CS255-todo: Well this needs some work...
   var key = 'CS255-todo';
 
@@ -86,7 +109,7 @@ function GenerateKey(group) {
 
 // Take the current group keys, and save them to disk.
 function SaveKeys() {
-  	alert("SaveKeys");
+  	//alert("SaveKeys");
 
   // CS255-todo: plaintext keys going to disk?
   var key_str = JSON.stringify(keys);
@@ -96,8 +119,17 @@ function SaveKeys() {
 
 // Load the group keys from disk.
 function LoadKeys() {
-	alert("Load");
-
+	//alert("Load");
+	var testStr = "abc abc abc ";
+	var bits1 = sjcl.codec.utf8String.toBits(testStr);
+	
+	//alert("size: " + bits1.length);
+	
+	var str64a = sjcl.codec.base64.fromBits(bits1,1,0);
+	var str64b = sjcl.codec.base64.fromBits(bits1,0,0);
+	//alert(str64a);
+	//alert(str64b);
+	
   keys = {}; // Reset the keys.
   var saved = localStorage.getItem('facebook-keys-' + my_username);
   if (saved) {
@@ -106,6 +138,8 @@ function LoadKeys() {
     keys = JSON.parse(key_str);
   }
 }
+
+// splitStringEveryNChars(str, n)
 
 /////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////
