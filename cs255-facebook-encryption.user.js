@@ -48,7 +48,7 @@ function Encrypt(plainText, group) {
 	var cipherText = initializationVector.slice(0);
 	
 	for(var i=0 ; i<bits.length ; i = i+4) {
-		alert("i: " + i + "\nIV.length: " + initializationVector.length);
+		//alert("i: " + i + "\nIV.length: " + initializationVector.length);
 		var xorWith = cipher.encrypt(initializationVector);
 		for(var j=0 ; j<4 && i+j<bits.length ; j++) {
 			cipherText.push(bits[i+j] ^ xorWith[j]);
@@ -57,19 +57,10 @@ function Encrypt(plainText, group) {
 		
 	}
 
-	var output = "TEST: ";
+	var output = "";
 	output = output + sjcl.codec.base64.fromBits(cipherText,1,0);
 	return output;
 	
-	// CS255-todo: encrypt the plainText, using key for the group.
-	//if ((plainText.indexOf('rot13:') == 0) || (plainText.length < 1)) {
-		// already done, or blank
-		//alert("Try entering a message (the button works only once)");
-		//return plainText;
-	//} else {
-		// encrypt, add tag.
-		//return 'rot13:' + rot13(plainText);
-	//}
 }
 
 // Return the decryption of the message for the given group, in the form of a string.
@@ -79,19 +70,32 @@ function Encrypt(plainText, group) {
 // @param {String} group Group name.
 // @return {String} Decryption of the ciphertext.
 function Decrypt(cipherText, group) {
-		//alert("Decrpyt");
+		//alert("Decrpyt " + cipherText);
 
   // CS255-todo: implement decryption on encrypted messages
 
-  if (cipherText.indexOf('rot13:') == 0) {
+  //if (cipherText.indexOf('rot13:') == 0) {
 
     // decrypt, ignore the tag.
-    var decryptedMsg = rot13(cipherText.slice(6));
-    return decryptedMsg;
-
-  } else {
-    throw "not encrypted";
-  }
+	var bits = sjcl.codec.base64.toBits(cipherText,0);
+    var initializationVector = bits.slice(0,4);
+	var groupKey = [0,1,2,3]; //change to key
+	var cipher = new sjcl.cipher.aes(groupKey);
+	bits = bits.slice(4);
+	var plainText = [];
+	
+	for(var i = 0; i<bits.length; i+=4) {
+		var xorWith = cipher.encrypt(initializationVector);
+		for(var j = 0; j < 4 && i+j<bits.length; j++) {
+			plainText.push(bits[i+j] ^ xorWith[j]);
+		}
+		initializationVector[3] = initializationVector[3]+1;
+	}
+	
+    return sjcl.codec.utf8String.fromBits(plainText);
+  //} else {
+   // throw "not encrypted";
+  //}
 }
 
 // Generate a new key for the given group.
