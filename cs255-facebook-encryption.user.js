@@ -102,48 +102,78 @@ function Decrypt(cipherText, group) {
 //
 // @param {String} group Group name.
 function GenerateKey(group) {
-		//alert("Gen Key");
-// REMEMBER!!: key is an array of 4 x 32bit values
-  // CS255-todo: Well this needs some work...
-  var key = 'CS255-todo';
-
-  keys[group] = key;
+  var key = GetRandomValues(4);
+  keys[group] = encodeForStorage(key);
   SaveKeys();
 }
 
 // Take the current group keys, and save them to disk.
 function SaveKeys() {
-  	//alert("SaveKeys");
-
-  // CS255-todo: plaintext keys going to disk?
-  var key_str = JSON.stringify(keys);
-
-  localStorage.setItem('facebook-keys-' + my_username, encodeURIComponent(key_str));
+	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
+	if(DBKey != null) {
+		DBKey = decodeFromStorage(DBKey);
+		var encryptedMap = [];
+		var cipher = new sjcl.cipher.aes(DBKey);
+		for(var group in keys) {
+			encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
+		}
+		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedMap));
+	}
 }
 
 // Load the group keys from disk.
 function LoadKeys() {
-	//alert("Load");
-	var testStr = "abc abc abc ";
-	var bits1 = sjcl.codec.utf8String.toBits(testStr);
-	
-	//alert("size: " + bits1.length);
-	
-	var str64a = sjcl.codec.base64.fromBits(bits1,1,0);
-	var str64b = sjcl.codec.base64.fromBits(bits1,0,0);
-	//alert(str64a);
-	//alert(str64b);
-	
-  keys = {}; // Reset the keys.
-  var saved = localStorage.getItem('facebook-keys-' + my_username);
-  if (saved) {
-    var key_str = decodeURIComponent(saved);
-    // CS255-todo: plaintext keys were on disk?
-    keys = JSON.parse(key_str);
-  }
+	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
+	if(DBKey == null) {
+		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
+		if(encryptedDBKey == null) {
+			encryptedDBKey = decodeFromStorage(encryptedDBKey);
+			var password = prompt("Please create a password for your database: ");
+			var salt = GetRandomValues(4);
+			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
+			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(tempDBKey));
+			var cipher = new sjcl.cipher.aes(DBKey);
+			encryptedDBKey = cipher.encrypt(DBKey);
+			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
+			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(encryptedDBKey));
+		} else {
+			while(true) {
+				var password = prompt("Enter database password: ");
+				var salt = decodeFromStorage(cs255.localStorage.getItem(my_username+"-salt"));
+				assert(salt != null, "ERROR: could not retrieve salt");
+				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
+				var cipher = new sjcl.cipher.aes(tempDBKey);
+				encryptedTempDBKey = cipher.encrypt(tempDBKey);
+				var keysMatch = true;
+				for(var i=0 ; i<4 ; i++) {
+					if(encryptedTempDBKey[i] != encryptedDBKey[i]) {
+						keysMatch = false;
+						break;
+					}
+				}
+				if(keysMatch) {
+					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
+					if(encryptedGroupKeys != null) {
+						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
+						for(var group in encryptedGroupKeys) {
+							keys[group] = encodeForStorage(cipher.decrypt(encryptedGroupKeys[group]));
+						}
+					}
+					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
+					break;
+				}
+			}
+		}
+	}
 }
 
-// splitStringEveryNChars(str, n)
+function encodeForStorage(value) {
+	return encodeURIComponent(JSON.stringify(value));
+}
+
+function decodeFromStorage(value) {
+	return JSON.parse(decodeURIComponent(value));
+}
 
 /////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////
@@ -196,6 +226,36 @@ function LoadKeys() {
 //
 /////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////
+
+var cs255 = {
+  localStorage: {
+    setItem: function(key, value) {
+      localStorage.setItem(key, value);
+      var newEntries = {};
+      newEntries[key] = value;
+      chrome.storage.local.set(newEntries);
+    },
+    getItem: function(key) {
+      return localStorage.getItem(key);
+    },
+    clear: function() {
+      chrome.storage.local.clear();
+    }
+  }
+}
+
+if (typeof chrome.storage === "undefined") {
+  var id = function() {};
+  chrome.storage = {local: {get: id, set: id}};
+}
+else {
+  // See if there are any values stored with the extension.
+  chrome.storage.local.get(null, function(onDisk) {
+    for (key in onDisk) {
+      localStorage.setItem(key, onDisk[key]);
+    }
+  });
+}
 
 // Get n 32-bit-integers entropy as an array. Defaults to 1 word
 function GetRandomValues(n) {
