@@ -39,8 +39,8 @@ function Encrypt(plainText, group) {
 	assert(my_username != undefined);
 	
 	var initializationVector = GetRandomValues(4);
-	var groupKey = [0,1,2,3];//keys[group]
-	
+	//var groupKey = [0,1,2,3];//keys[group]
+	var groupKey = decodeFromStorage(keys[group]);
 	//alert("IV length: " + initializationVector.length);
 	
 	var bits = sjcl.codec.utf8String.toBits(plainText);
@@ -75,7 +75,8 @@ function Decrypt(cipherText, group) {
 	
 	var bits = sjcl.codec.base64.toBits(cipherText,0);
     var initializationVector = bits.slice(0,4);
-	var groupKey = [0,1,2,3]; //change to key
+	//var groupKey = [0,1,2,3]; //change to key
+	var groupKey = decodeFromStorage(keys[group]);
 	var cipher = new sjcl.cipher.aes(groupKey);
 	bits = bits.slice(4);
 	var plainText = [];
@@ -101,7 +102,6 @@ function GenerateKey(group) {
 	assert(my_username != undefined);
 	var key = GetRandomValues(4);
 	keys[group] = encodeForStorage(key);
-	alert("b");
 	SaveKeys();
 }
 
@@ -109,20 +109,13 @@ function GenerateKey(group) {
 function SaveKeys() {
 	assert(my_username != undefined);
 	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
-	alert("a");
 	if(DBKey != null) {
-		alert("dbkey not null");
 		DBKey = decodeFromStorage(DBKey);
 		var encryptedMap = {};
 		var cipher = new sjcl.cipher.aes(DBKey);
 		for(var group in keys) {
-			alert(group);
 			encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
 		}
-		alert(encryptedMap[group]);
-		alert(encodeForStorage(encryptedMap));
-		alert(JSON.stringify(keys));
-		alert(JSON.stringify(encryptedMap));
 		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedMap));
 	}
 }
@@ -140,7 +133,6 @@ function LoadKeys() {
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
-			alert("DBKey stored");
 			var cipher = new sjcl.cipher.aes(DBKey);
 			encryptedDBKey = cipher.encrypt(DBKey);
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
