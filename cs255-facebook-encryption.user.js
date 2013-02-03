@@ -36,7 +36,7 @@ var keys = {}; // association map of keys: group -> key
 // @param {String} group Group name.
 // @return {String} Encryption of the plaintext, encoded as a string.
 function Encrypt(plainText, group) {
-	alert("Encrypt");
+	assert(my_username != undefined);
 	
 	var initializationVector = GetRandomValues(4);
 	var groupKey = [0,1,2,3];//keys[group]
@@ -70,13 +70,9 @@ function Encrypt(plainText, group) {
 // @param {String} group Group name.
 // @return {String} Decryption of the ciphertext.
 function Decrypt(cipherText, group) {
-		//alert("Decrpyt " + cipherText);
 
-  // CS255-todo: implement decryption on encrypted messages
-
-  //if (cipherText.indexOf('rot13:') == 0) {
-
-    // decrypt, ignore the tag.
+	assert(my_username != undefined);
+	
 	var bits = sjcl.codec.base64.toBits(cipherText,0);
     var initializationVector = bits.slice(0,4);
 	var groupKey = [0,1,2,3]; //change to key
@@ -102,27 +98,39 @@ function Decrypt(cipherText, group) {
 //
 // @param {String} group Group name.
 function GenerateKey(group) {
-  var key = GetRandomValues(4);
-  keys[group] = encodeForStorage(key);
-  SaveKeys();
+	assert(my_username != undefined);
+	var key = GetRandomValues(4);
+	keys[group] = encodeForStorage(key);
+	alert("b");
+	SaveKeys();
 }
 
 // Take the current group keys, and save them to disk.
 function SaveKeys() {
+	assert(my_username != undefined);
 	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
+	alert("a");
 	if(DBKey != null) {
+		alert("dbkey not null");
 		DBKey = decodeFromStorage(DBKey);
-		var encryptedMap = [];
+		var encryptedMap = {};
 		var cipher = new sjcl.cipher.aes(DBKey);
 		for(var group in keys) {
+			alert(group);
 			encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
 		}
+		alert(encryptedMap[group]);
+		alert(encodeForStorage(encryptedMap));
+		alert(JSON.stringify(keys));
+		alert(JSON.stringify(encryptedMap));
 		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedMap));
 	}
 }
 
 // Load the group keys from disk.
-function LoadKeys() {
+function LoadKeys() {	
+	assert(my_username != undefined);
+	
 	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
 	if(DBKey == null) {
 		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
@@ -131,7 +139,8 @@ function LoadKeys() {
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
-			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(tempDBKey));
+			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
+			alert("DBKey stored");
 			var cipher = new sjcl.cipher.aes(DBKey);
 			encryptedDBKey = cipher.encrypt(DBKey);
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
@@ -143,7 +152,7 @@ function LoadKeys() {
 				assert(salt != null, "ERROR: could not retrieve salt");
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 				var cipher = new sjcl.cipher.aes(tempDBKey);
-				encryptedTempDBKey = cipher.encrypt(tempDBKey);
+				var encryptedTempDBKey = cipher.encrypt(tempDBKey);
 				var keysMatch = true;
 				for(var i=0 ; i<4 ; i++) {
 					if(encryptedTempDBKey[i] != encryptedDBKey[i]) {
@@ -162,6 +171,16 @@ function LoadKeys() {
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
 					break;
 				}
+			}
+		}
+	} else {
+		DBKey = decodeFromStorage(DBKey);
+		var cipher = new sjcl.cipher.aes(DBKey);
+		var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
+		if(encryptedGroupKeys != null) {
+			encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
+			for(var group in encryptedGroupKeys) {
+				keys[group] = encodeForStorage(cipher.decrypt(encryptedGroupKeys[group]));
 			}
 		}
 	}
