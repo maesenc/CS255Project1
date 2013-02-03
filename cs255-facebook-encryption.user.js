@@ -150,7 +150,6 @@ function LoadKeys() {
 				for(var i=0 ; i<4 ; i++) {
 					if(encryptedTempDBKey[i] != encryptedDBKey[i]) {
 						keysMatch = false;
-						break;
 					}
 				}
 				if(keysMatch) {
