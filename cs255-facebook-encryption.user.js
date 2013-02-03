@@ -153,6 +153,7 @@ function LoadKeys() {
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 				var cipher = new sjcl.cipher.aes(tempDBKey);
 				var encryptedTempDBKey = cipher.encrypt(tempDBKey);
+				encryptedDBKey = decodeFromStorage(encryptedDBKey);
 				var keysMatch = true;
 				for(var i=0 ; i<4 ; i++) {
 					if(encryptedTempDBKey[i] != encryptedDBKey[i]) {
