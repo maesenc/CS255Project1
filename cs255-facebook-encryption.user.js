@@ -127,29 +127,65 @@ function LoadKeys() {
 	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
 	if(DBKey == null) {
 		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
+		
 		if(encryptedDBKey == null) {
 			encryptedDBKey = decodeFromStorage(encryptedDBKey);
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
+			var paddedPassword = padTo128Bits(password);
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
 			var cipher = new sjcl.cipher.aes(DBKey);
-			encryptedDBKey = cipher.encrypt(DBKey);
+			encryptedDBKey = [];
+			for(var i = 0; i < paddedPassword.length; i++) {
+				var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
+				encryptedDBKey.push(encryptedDBKeyBlock);
+			}
+			
+			alert("encryptedDBKEy lenght: "+ encryptedDBKey.length);
+			
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
 			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(encryptedDBKey));
-		} else {
+		} else {	
+			encryptedDBKey = decodeFromStorage(encryptedDBKey);
+			
 			while(true) {
+			
+			
 				var password = prompt("Enter database password: ");
 				var salt = decodeFromStorage(cs255.localStorage.getItem(my_username+"-salt"));
+			
 				assert(salt != null, "ERROR: could not retrieve salt");
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 				var cipher = new sjcl.cipher.aes(tempDBKey);
-				var encryptedTempDBKey = cipher.encrypt(tempDBKey);
-				encryptedDBKey = decodeFromStorage(encryptedDBKey);
+				var paddedTempPassword = padTo128Bits(password);
+				//alert(paddedTempPassword);
+				
+				
+				//alert("encryptedDBKey : " + encryptedDBKey);
+				//alert("len: " + encryptedDBKey.length);
+				
+				var encryptedTempDBKey =[];
+				for(var i=0; i< paddedTempPassword.length; i++) {
+					var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
+					//alert(encryptedBlock);
+					encryptedTempDBKey.push(encryptedBlock);
+				}
+				//alert("enteredkeylength" + encryptedTempDBKey.length);
+				
 				var keysMatch = true;
-				for(var i=0 ; i<4 ; i++) {
-					if(encryptedTempDBKey[i] != encryptedDBKey[i]) {
-						keysMatch = false;
+				if(encryptedDBKey.length != encryptedTempDBKey.length) {
+					keysMatch = false;
+					//alert("size differed");
+				} else {
+					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
+						
+						for(var j = 0; j < 4; j++) {
+							if(encryptedTempKey[i][j] != encryptedDBKey[i][j]) {
+								keysMatch = false;
+								//alert("here");
+							}
+						}
 					}
 				}
 				if(keysMatch) {
@@ -161,7 +197,10 @@ function LoadKeys() {
 						}
 					}
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
+					//alert("keys matched");
 					break;
+				} else {
+					alert("Passwords do not match.  Try again."); 
 				}
 			}
 		}
@@ -184,6 +223,38 @@ function encodeForStorage(value) {
 
 function decodeFromStorage(value) {
 	return JSON.parse(decodeURIComponent(value));
+}
+
+// Parameter: string message
+// Return value: an array of 128-bit blocks of data
+// an array of arrays of 4 32 bit elements
+function padTo128Bits(message) {
+	//alert("mess len: " + message.length + " mod 16: " + message.length %16);
+	var padLength = 16 - (message.length % 16);
+	// add 1 
+	message += '1';
+	for(var i = 1; i < padLength; i++) {
+		message += '0';
+		// add 0
+	}
+	var paddedMessage = [];
+	var bits = sjcl.codec.utf8String.toBits(message);
+	
+	for(var i = 0; i < bits.length; i+=4) {
+		var block = [];
+		for(var j = 0; j < 4; j++) {
+			block.push(bits[i+j]);
+		}
+		paddedMessage.push(block);
+	}
+	
+	
+	//alert("paddedMessage length in blocks: " + paddedMessage.length);
+	return paddedMessage;
+	// divide message into 4 byte chunks
+	// add each as array to padded message
+
+
 }
 
 /////////////////////////////////////////////////////////
