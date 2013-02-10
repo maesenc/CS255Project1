@@ -130,12 +130,25 @@ function LoadKeys() {
 		
 		if(encryptedDBKey == null) {
 			encryptedDBKey = decodeFromStorage(encryptedDBKey);
+			
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
+			alert("DBKey: " + DBKey);
 			var paddedPassword = padTo128Bits(password);
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
-			var cipher = new sjcl.cipher.aes(DBKey);
+			alert(DBKey);
+			
+			var masterCipher = new sjcl.cipher.aes(DBKey);
+			var n0 = [0, 0, 0, 0];
+			var n1 = [0,0,0,1];
+			var n2 = [0,0,0,2];
+			
+			var encryptKey = masterCipher.encrypt(n0);
+			alert(encryptKey);
+			
+			var cipher = new sjcl.cipher.aes(encryptKey);
+			
 			encryptedDBKey = [];
 			for(var i = 0; i < paddedPassword.length; i++) {
 				var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
@@ -148,6 +161,7 @@ function LoadKeys() {
 			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(encryptedDBKey));
 		} else {	
 			encryptedDBKey = decodeFromStorage(encryptedDBKey);
+			alert(encryptedDBKey);
 			
 			while(true) {
 			
@@ -157,7 +171,20 @@ function LoadKeys() {
 			
 				assert(salt != null, "ERROR: could not retrieve salt");
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
-				var cipher = new sjcl.cipher.aes(tempDBKey);
+				alert(tempDBKey);
+				
+				var masterCipher = new sjcl.cipher.aes(tempDBKey);
+				
+				
+				var n0 = [0, 0, 0, 0];
+				var n1 = [0,0,0,1];
+				var n2 = [0,0,0,2];
+			
+				var encryptKey = masterCipher.encrypt(n0);
+				alert(encryptKey);
+				
+				var cipher = new sjcl.cipher.aes(encryptKey);
+				
 				var paddedTempPassword = padTo128Bits(password);
 				//alert(paddedTempPassword);
 				
@@ -171,24 +198,26 @@ function LoadKeys() {
 					//alert(encryptedBlock);
 					encryptedTempDBKey.push(encryptedBlock);
 				}
+				alert("enteredkeylength" + encryptedTempDBKey.length);
 				//alert("enteredkeylength" + encryptedTempDBKey.length);
 				
 				var keysMatch = true;
 				if(encryptedDBKey.length != encryptedTempDBKey.length) {
 					keysMatch = false;
-					//alert("size differed");
+					alert("size differed");
 				} else {
 					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
 						
 						for(var j = 0; j < 4; j++) {
-							if(encryptedTempKey[i][j] != encryptedDBKey[i][j]) {
+							if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
 								keysMatch = false;
-								//alert("here");
+								alert("here");
 							}
 						}
 					}
 				}
 				if(keysMatch) {
+					alert("keys matched");
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
 					if(encryptedGroupKeys != null) {
 						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
@@ -197,7 +226,7 @@ function LoadKeys() {
 						}
 					}
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
-					//alert("keys matched");
+					
 					break;
 				} else {
 					alert("Passwords do not match.  Try again."); 
