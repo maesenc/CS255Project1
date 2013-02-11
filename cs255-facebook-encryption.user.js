@@ -184,23 +184,36 @@ function LoadKeys() {
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 			var paddedPassword = padTo128Bits(password);
+			var passwordArray = flattenArray(paddedPassword);
+			
+			
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
 			
 			var masterCipher = new sjcl.cipher.aes(DBKey);
-			var n0 = [0, 0, 0, 0];
+			var n0 = [0,0,0,0];
 			
-			var encryptKey = masterCipher.encrypt(n0);
 			
-			var cipher = new sjcl.cipher.aes(encryptKey);
 			
-			encryptedDBKey = [];
-			for(var i = 0; i < paddedPassword.length; i++) {
-				var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
-				encryptedDBKey.push(encryptedDBKeyBlock);
-			}
+			
+			
+			var n4 = [0,0,0,4];
+			
+			var k1 = masterCipher.encrypt(n0);
+			var k2 = masterCipher.encrypt(n4);
+			
+			var passwordHash = CBCMac(k1, k2, passwordArray);
+			
+				
+			//var cipher = new sjcl.cipher.aes(encryptKey);
+		
+			//encryptedDBKey = [];
+			//for(var i = 0; i < paddedPassword.length; i++) {
+			//	var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
+			//	encryptedDBKey.push(encryptedDBKeyBlock);
+			//}
 			
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
-			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(encryptedDBKey));
+			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(passwordHash));
 		} else {	
 			encryptedDBKey = decodeFromStorage(encryptedDBKey);
 			
@@ -216,29 +229,38 @@ function LoadKeys() {
 				var n1 = [0,0,0,1];
 				var n2 = [0,0,0,2];
 				var n3 = [0,0,0,3];
-			
-				var encryptKey = masterCipher.encrypt(n0);
-				var cipher = new sjcl.cipher.aes(encryptKey);
-				var paddedTempPassword = padTo128Bits(password);
+				var n4 = [0,0,0,4];
 				
-				var encryptedTempDBKey =[];
-				for(var i=0; i< paddedTempPassword.length; i++) {
-					var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
-					encryptedTempDBKey.push(encryptedBlock);
-				}
+				var tempPaddedPassword = padTo128Bits(password);
+				var passwordArray = flattenArray(tempPaddedPassword);
 				
-				var keysMatch = true;
-				if(encryptedDBKey.length != encryptedTempDBKey.length) {
-					keysMatch = false;
-				} else {
-					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
-						for(var j = 0; j < 4; j++) {
-							if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
-								keysMatch = false;
-							}
-						}
-					}
-				}
+				
+				var k0 = masterCipher.encrypt(n0);
+				var k4 = masterCipher.encrypt(n4);
+				var keysMatch = VerifyMac(encryptedDBKey, k0, k4, passwordArray);
+				
+				//var encryptKey = masterCipher.encrypt(n0);
+				//var cipher = new sjcl.cipher.aes(encryptKey);
+				//var paddedTempPassword = padTo128Bits(password);
+				
+				//var encryptedTempDBKey =[];
+				//for(var i=0; i< paddedTempPassword.length; i++) {
+				//	var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
+				//	encryptedTempDBKey.push(encryptedBlock);
+				//}
+				
+				//var keysMatch = true;
+				//if(encryptedDBKey.length != encryptedTempDBKey.length) {
+				//	keysMatch = false;
+				//} else {
+				//	for(var i=0 ; i< encryptedTempDBKey.length; i++) {
+				//		for(var j = 0; j < 4; j++) {
+				//			if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
+				//				keysMatch = false;
+				//			}
+				//		}
+				//	}
+				//}
 				if(keysMatch) {
 					
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
@@ -272,7 +294,10 @@ function LoadKeys() {
 							
 							keys = decodeFromStorage(removePad(paddedDB));		
 						} else {
-							alert("Database corruption detected.  Could not retrieve database.");
+							alert("mac: " +MACtoVerify);
+							alert("encryptedgroupkeys:" + encryptedGroupKeys);
+							
+							alert("Database coruption detected.  Could not retrieve database.");
 						}
 					}
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
@@ -367,7 +392,7 @@ function CBCMac(k1, k2, ciphertext) {
 
 // hash: array of 4 32-bit words
 // k1 and k2: keys to cbc mac
-// ciphertext: array of arrays of 4 32-bit words
+// ciphertext: array 32-bit words
 // returns true/false
 function VerifyMac(hash, k1, k2, ciphertext) {
 	//alert("verifying hash: " + hash);
@@ -427,6 +452,18 @@ function padTo128Bits(message) {
 	// divide message into 4 byte chunks
 	// add each as array to padded message
 
+
+}
+
+function flattenArray(blockArray) {
+	var result = [];
+	for(var i = 0; i < blockArray.length; i++) {
+		var inner = blockArray[i];
+		for(var j = 0; j < inner.length; j++) {
+			result.push(inner[j]);
+		}
+	}
+	return result;
 
 }
 
