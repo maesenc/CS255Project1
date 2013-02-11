@@ -39,30 +39,34 @@ function Encrypt(plainText, group) {
 	assert(my_username != undefined);
 	
 	var initializationVector = GetRandomValues(4);
-	//var groupKey = [0,1,2,3];//keys[group]
 	var groupKey = decodeFromStorage(keys[group]);
-	//alert("IV length: " + initializationVector.length);
-	
 	var bits = sjcl.codec.utf8String.toBits(plainText);
 	var cipher = new sjcl.cipher.aes(groupKey);
 	var cipherText = initializationVector.slice(0);
 	
 	for(var i=0 ; i<bits.length ; i = i+4) {
-		//alert("i: " + i + "\nIV.length: " + initializationVector.length);
 		var xorWith = cipher.encrypt(initializationVector);
 		for(var j=0 ; j<4 && i+j<bits.length ; j++) {
 			cipherText.push(bits[i+j] ^ xorWith[j]);
 		}
 		initializationVector[3] = initializationVector[3] + 1;
-		
 	}
 	
-	//TODO: Make k1 = AES(groupKey, IV) and k2 = AES(groupKey, IV+1)
-	//TODO: push MAC(k1,k2,ciphertext) onto plaintext
-
-	var output = "";
-	output = output + sjcl.codec.base64.fromBits(cipherText,1,0);
-	return output;
+	var k1 = cipher.encrypt(initializationVector);
+	initializationVector[3] = initializationVector[3] + 1;
+	var k2 = cipher.encrypt(initializationVector);
+	
+	var hash = CBCMac(k1, k2, cipherText);
+	
+	var output = hash.slice(0);
+	for(var i = 0; i < cipherText.length; i++) {
+		output.push(cipherText[i]);
+	}
+	
+	
+	var finalresult =  sjcl.codec.base64.fromBits(output,1,0);
+	//alert("encrypt returning: " + finalresult);
+	return finalresult;
 	
 }
 
@@ -75,29 +79,53 @@ function Encrypt(plainText, group) {
 function Decrypt(cipherText, group) {
 
 	assert(my_username != undefined);
+	//alert(cipherText);
 	
 	var bits = sjcl.codec.base64.toBits(cipherText,0);
-    var initializationVector = bits.slice(0,4);
+    var hash = bits.slice(0,4);
+	bits = bits.slice(4);
+	var initializationVector = bits.slice(0, 4);
+	
+	var length = (bits.length - 4);
+	if(length % 4 != 0) {
+		length += (4 - length %4);
+	} 
+	length = length/4;
+	
+	var IVCopy = initializationVector.slice(0);
+	IVCopy[3] = IVCopy[3] + length;
 	//store maccipher as everything in pits except the last 4 blocks
 	var groupKey = decodeFromStorage(keys[group]);
 	var cipher = new sjcl.cipher.aes(groupKey);
-	bits = bits.slice(4);
-	var plainText = [];
 	
-	for(var i = 0; i<bits.length; i+=4) {  // bits.tVector);
-		for(var j = 0; j < 4 && i+j<bits.length; j++) {
-			plainText.push(bits[i+j] ^ xorWith[j]);
-		}
-		initializationVector[3] = initializationVector[3]+1;
+	var k1 = cipher.encrypt(IVCopy);
+	IVCopy[3] = IVCopy[3]+1;
+	var k2 = cipher.encrypt(IVCopy);
+	
+	
+	var verify = VerifyMac(hash, k1, k2, bits);
+	if(verify) {
+		bits = bits.slice(4);
+		var plainText = [];
+		
+		for(var i = 0; i<bits.length; i+=4) {  // bits.tVector);
+		
+			
+			var xorWith = cipher.encrypt(initializationVector);
+			for(var j = 0; j < 4 && i+j<bits.length; j++) {
+				plainText.push(bits[i+j] ^ xorWith[j]);
+		
+			}
+			initializationVector[3] = initializationVector[3]+1;
+		}	
+		
+		var output = "" +  sjcl.codec.utf8String.fromBits(plainText);
+		return output;
+		
+	} else {
+		alert("Message appears to have been corrupted.");
 	}
 	
-	//TODO: AES on groupKey, IV now and IV+1 to get k1, k2
-	// TODO: Verify that last four words of bits are equal to MAC(k1, k2, maccipher)
-	
-    return sjcl.codec.utf8String.fromBits(plainText);
-  //} else {
-   // throw "not encrypted";
-  //}
 }
 
 // Generate a new key for the given group.
@@ -139,13 +167,6 @@ function SaveKeys() {
 		
 		var DBMac = CBCMac(k2, k3, encryptedDB);		
 		
-		//for(var group in keys) {
-		//	encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
-		//}
-		// NEED ANOTHER EXPANSION?
-		
-		// Change to encrypting the bit array created from the string version of keys
-		// MAC THE ENCRYPTION with k1, k2
 		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedDB));
 		cs255.localStorage.setItem(my_username+"-groupKeysMAC",encodeForStorage(DBMac));
 	}
@@ -159,8 +180,6 @@ function LoadKeys() {
 		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
 		
 		if(encryptedDBKey == null) {
-			//encryptedDBKey = decodeFromStorage(encryptedDBKey);
-			
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
@@ -228,31 +247,33 @@ function LoadKeys() {
 					var k1 = masterCipher.encrypt(n2);
 					var k2 = masterCipher.encrypt(n3);
 					
-					// TODO: Generate k1 and k2 from DBKey
-					// TODO: Get groupKeys MAC from storage
-					// TODO: Verify groupKeys MAC with k1 and k2
+					// Generate k1 and k2 from DBKey
+					// Get groupKeys MAC from storage
+					// Verify groupKeys MAC with k1 and k2
 					
 					if(encryptedGroupKeys != null) {
 						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
-						alert("encryptedGroupKeys: " +encryptedGroupKeys +"\n length: " +encryptedGroupKeys.length);
+						var MACtoVerify = decodeFromStorage(cs255.localStorage.getItem(my_username+"-groupKeysMAC"));
+						var verified = VerifyMac(MACtoVerify, k1, k2, encryptedGroupKeys);
 						
-						if(encryptedGroupKeys.length == 0) return;
-						var keysMapEncoding = [];
-						for(var i = 0; i < encryptedGroupKeys.length; i+=4) {
-							var encodingBlock = [];
-							for(var j = 0; j < 4; j++) {
-								encodingBlock[j]=encryptedGroupKeys[i+j];
+						if(verified) {
+							var keysMapEncoding = [];
+							for(var i = 0; i < encryptedGroupKeys.length; i+=4) {
+								var encodingBlock = [];
+								for(var j = 0; j < 4; j++) {
+									encodingBlock[j]=encryptedGroupKeys[i+j];
+								}
+								var decryptedBlock = DBCipher.decrypt(encodingBlock);
+								for(var j=0; j < 4; j++) {
+									keysMapEncoding.push(decryptedBlock[j]);
+								}
 							}
-							var decryptedBlock = DBCipher.decrypt(encodingBlock);
-							for(var j=0; j < 4; j++) {
-								keysMapEncoding.push(decryptedBlock[j]);
-							}
+							var paddedDB = sjcl.codec.utf8String.fromBits(keysMapEncoding);
+							
+							keys = decodeFromStorage(removePad(paddedDB));		
+						} else {
+							alert("Database corruption detected.  Could not retrieve database.");
 						}
-						alert("keysMapEncoding.length: "+keysMapEncoding.length);
-						var paddedDB = sjcl.codec.utf8String.fromBits(keysMapEncoding);
-						alert("paddedDB: " + paddedDB);
-						
-						keys = decodeFromStorage(removePad(paddedDB));	
 					}
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
 					
@@ -265,16 +286,40 @@ function LoadKeys() {
 	} else {
 		DBKey = decodeFromStorage(DBKey);
 		var cipher = new sjcl.cipher.aes(DBKey);
-		var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys")
-		// TODO: Generate k1 and k2 from DBKey/
-		// TODO: Get groupKeys MAC from storage
-		// TODO: Verify groupKeys MAC with k1 and k2
+		var n1 = [0,0,0,1];
+		var n2 = [0,0,0,2];
+		var n3 = [0,0,0,3];
+	
 		
-		// CHANGE: decrypt encrypted group keys as one map
-		if(encryptedGroupKeys != null) { // AND VERIFIED
+		var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
+		var DBCipherKey = cipher.encrypt(n1);
+		var DBCipher = new sjcl.cipher.aes(DBCipherKey);
+		var k1 = cipher.encrypt(n2);
+		var k2 = cipher.encrypt(n3);
+					
+		if(encryptedGroupKeys != null) {
 			encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
-			for(var group in encryptedGroupKeys) {
-				keys[group] = encodeForStorage(cipher.decrypt(encryptedGroupKeys[group]));
+			var MACtoVerify = decodeFromStorage(cs255.localStorage.getItem(my_username+"-groupKeysMAC"));
+			
+			var verified = VerifyMac(MACtoVerify, k1, k2, encryptedGroupKeys);
+			
+			if(verified) {
+				var keysMapEncoding = [];
+				for(var i = 0; i < encryptedGroupKeys.length; i+=4) {
+					var encodingBlock = [];
+					for(var j = 0; j < 4; j++) {
+						encodingBlock[j]=encryptedGroupKeys[i+j];
+					}
+					var decryptedBlock = DBCipher.decrypt(encodingBlock);
+					for(var j=0; j < 4; j++) {
+						keysMapEncoding.push(decryptedBlock[j]);
+					}
+				}
+				var paddedDB = sjcl.codec.utf8String.fromBits(keysMapEncoding);
+				
+				keys = decodeFromStorage(removePad(paddedDB));		
+			} else {
+				alert("Database corruption detected.  Could not retrieve database.");
 			}
 		}
 	}
@@ -294,6 +339,8 @@ function decodeFromStorage(value) {
 // ciphertext: array of 32-bit words
 // returns: an array of 4 32-bit words
 function CBCMac(k1, k2, ciphertext) {
+	//alert("mac ciphertext: " + ciphertext);
+	
 	var cipher1 = new sjcl.cipher.aes(k1);
 	var cipher2 = new sjcl.cipher.aes(k2);
 	var xorWith = [0,0,0,0];
@@ -323,6 +370,7 @@ function CBCMac(k1, k2, ciphertext) {
 // ciphertext: array of arrays of 4 32-bit words
 // returns true/false
 function VerifyMac(hash, k1, k2, ciphertext) {
+	//alert("verifying hash: " + hash);
 	var validHash = CBCMac(k1, k2, ciphertext);
 	for(var i = 0; i < 4; i++) {
 		if(validHash[i] != hash[i]) {
