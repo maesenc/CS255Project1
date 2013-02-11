@@ -56,6 +56,9 @@ function Encrypt(plainText, group) {
 		initializationVector[3] = initializationVector[3] + 1;
 		
 	}
+	
+	//TODO: Make k1 = AES(groupKey, IV) and k2 = AES(groupKey, IV+1)
+	//TODO: push MAC(k1,k2,ciphertext) onto plaintext
 
 	var output = "";
 	output = output + sjcl.codec.base64.fromBits(cipherText,1,0);
@@ -75,19 +78,21 @@ function Decrypt(cipherText, group) {
 	
 	var bits = sjcl.codec.base64.toBits(cipherText,0);
     var initializationVector = bits.slice(0,4);
-	//var groupKey = [0,1,2,3]; //change to key
+	//store maccipher as everything in pits except the last 4 blocks
 	var groupKey = decodeFromStorage(keys[group]);
 	var cipher = new sjcl.cipher.aes(groupKey);
 	bits = bits.slice(4);
 	var plainText = [];
 	
-	for(var i = 0; i<bits.length; i+=4) {
-		var xorWith = cipher.encrypt(initializationVector);
+	for(var i = 0; i<bits.length; i+=4) {  // bits.tVector);
 		for(var j = 0; j < 4 && i+j<bits.length; j++) {
 			plainText.push(bits[i+j] ^ xorWith[j]);
 		}
 		initializationVector[3] = initializationVector[3]+1;
 	}
+	
+	//TODO: AES on groupKey, IV now and IV+1 to get k1, k2
+	// TODO: Verify that last four words of bits are equal to MAC(k1, k2, maccipher)
 	
     return sjcl.codec.utf8String.fromBits(plainText);
   //} else {
@@ -116,6 +121,8 @@ function SaveKeys() {
 		for(var group in keys) {
 			encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
 		}
+		// NEED ANOTHER EXPANSION?
+		// MAC THE ENCODING with k1, k2
 		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedMap));
 	}
 }
@@ -123,7 +130,6 @@ function SaveKeys() {
 // Load the group keys from disk.
 function LoadKeys() {	
 	assert(my_username != undefined);
-	
 	var DBKey = sessionStorage.getItem(my_username+"-DBKey");
 	if(DBKey == null) {
 		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
@@ -134,10 +140,8 @@ function LoadKeys() {
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
-			alert("DBKey: " + DBKey);
 			var paddedPassword = padTo128Bits(password);
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
-			alert(DBKey);
 			
 			var masterCipher = new sjcl.cipher.aes(DBKey);
 			var n0 = [0, 0, 0, 0];
@@ -145,7 +149,6 @@ function LoadKeys() {
 			var n2 = [0,0,0,2];
 			
 			var encryptKey = masterCipher.encrypt(n0);
-			alert(encryptKey);
 			
 			var cipher = new sjcl.cipher.aes(encryptKey);
 			
@@ -155,70 +158,51 @@ function LoadKeys() {
 				encryptedDBKey.push(encryptedDBKeyBlock);
 			}
 			
-			alert("encryptedDBKEy lenght: "+ encryptedDBKey.length);
-			
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
 			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(encryptedDBKey));
 		} else {	
 			encryptedDBKey = decodeFromStorage(encryptedDBKey);
-			alert(encryptedDBKey);
 			
 			while(true) {
-			
-			
 				var password = prompt("Enter database password: ");
 				var salt = decodeFromStorage(cs255.localStorage.getItem(my_username+"-salt"));
 			
 				assert(salt != null, "ERROR: could not retrieve salt");
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
-				alert(tempDBKey);
-				
 				var masterCipher = new sjcl.cipher.aes(tempDBKey);
-				
 				
 				var n0 = [0, 0, 0, 0];
 				var n1 = [0,0,0,1];
 				var n2 = [0,0,0,2];
 			
 				var encryptKey = masterCipher.encrypt(n0);
-				alert(encryptKey);
-				
 				var cipher = new sjcl.cipher.aes(encryptKey);
-				
 				var paddedTempPassword = padTo128Bits(password);
-				//alert(paddedTempPassword);
-				
-				
-				//alert("encryptedDBKey : " + encryptedDBKey);
-				//alert("len: " + encryptedDBKey.length);
 				
 				var encryptedTempDBKey =[];
 				for(var i=0; i< paddedTempPassword.length; i++) {
 					var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
-					//alert(encryptedBlock);
 					encryptedTempDBKey.push(encryptedBlock);
 				}
-				alert("enteredkeylength" + encryptedTempDBKey.length);
-				//alert("enteredkeylength" + encryptedTempDBKey.length);
 				
 				var keysMatch = true;
 				if(encryptedDBKey.length != encryptedTempDBKey.length) {
 					keysMatch = false;
-					alert("size differed");
 				} else {
 					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
-						
 						for(var j = 0; j < 4; j++) {
 							if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
 								keysMatch = false;
-								alert("here");
 							}
 						}
 					}
 				}
 				if(keysMatch) {
-					alert("keys matched");
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
+					// TODO: Generate k1 and k2 from DBKey
+					// TODO: Get groupKeys MAC from storage
+					// TODO: Verify groupKeys MAC with k1 and k2
+					
 					if(encryptedGroupKeys != null) {
 						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
 						for(var group in encryptedGroupKeys) {
@@ -236,8 +220,11 @@ function LoadKeys() {
 	} else {
 		DBKey = decodeFromStorage(DBKey);
 		var cipher = new sjcl.cipher.aes(DBKey);
-		var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
-		if(encryptedGroupKeys != null) {
+		var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys")
+		// TODO: Generate k1 and k2 from DBKey/
+		// TODO: Get groupKeys MAC from storage
+		// TODO: Verify groupKeys MAC with k1 and k2
+		if(encryptedGroupKeys != null) { // AND VERIFIED
 			encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
 			for(var group in encryptedGroupKeys) {
 				keys[group] = encodeForStorage(cipher.decrypt(encryptedGroupKeys[group]));
@@ -252,6 +239,50 @@ function encodeForStorage(value) {
 
 function decodeFromStorage(value) {
 	return JSON.parse(decodeURIComponent(value));
+}
+
+
+// k1 : first key
+// k2: second key
+// ciphertext: array of 32-bit words
+// returns: an array of 4 32-bit words
+function CBCMac(k1, k2, ciphertext) {
+	var cipher1 = new sjcl.cipher.aes(k1);
+	var cipher2 = new sjcl.cipher.aes(k2);
+	var xorWith = [0,0,0,0];
+	for(var i = 0; i < ciphertext.length; i+=4) {
+		var currentBlock = [];
+		for(int j = 0; j < 4; j++) { 
+			if(i+j < ciphertext.length) {
+				currentBlock[j] = ciphertext[i+j];
+			} else if(i+j == ciphertext.length) {
+				currentBlock[j] = 1;
+			} else {
+				currentBlock[j] = 0;
+			}
+		}
+		var xoredBlock = [];
+		for(var j = 0; j < 4; j++) {
+			xoredBlock[j] = xorWith[j] ^ currentBlock[j];
+		}
+		xorWith = cipher1.encrypt(xoredBlock);
+		
+	} // xorWith is the output of raw CBC.
+	return cipher2.encrypt(xorWith);
+}
+
+// hash: array of 4 32-bit words
+// k1 and k2: keys to cbc mac
+// ciphertext: array of arrays of 4 32-bit words
+// returns true/false
+function VerifyMac(hash, k1, k2, ciphertext) {
+	var validHash = CBCMac(k1, k2, ciphertext);
+	for(var i = 0; i < 4; i++) {
+		if(validHash[i] != hash[i]) {
+			return false;
+		}
+	}
+	return true;
 }
 
 // Parameter: string message
