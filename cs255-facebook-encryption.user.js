@@ -118,12 +118,36 @@ function SaveKeys() {
 		DBKey = decodeFromStorage(DBKey);
 		var encryptedMap = {};
 		var cipher = new sjcl.cipher.aes(DBKey);
-		for(var group in keys) {
-			encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
+		var n1 = [0,0,0,1];
+		var n2 = [0,0,0,2];
+		var n3 = [0,0,0,3]; 
+		
+		var k1 = cipher.encrypt(n1); // use to encrypt database
+		var k2 = cipher.encrypt(n2); // used to mac database
+		var k3 = cipher.encrypt(n3);
+		
+		var DBCipher = new sjcl.cipher.aes(k1);
+		var DBString = encodeForStorage(keys);
+		var paddedDB = padTo128Bits(DBString);
+		var encryptedDB = []; // array of 32-bit values
+		for(var i = 0; i < paddedDB.length; i++) {
+			var block = DBCipher.encrypt(paddedDB[i]);
+			for(var j =0; j< block.length; j++) {
+				encryptedDB.push(block[j]);
+			}
 		}
+		
+		var DBMac = CBCMac(k2, k3, encryptedDB);		
+		
+		//for(var group in keys) {
+		//	encryptedMap[group] = cipher.encrypt(decodeFromStorage(keys[group]));
+		//}
 		// NEED ANOTHER EXPANSION?
-		// MAC THE ENCODING with k1, k2
-		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedMap));
+		
+		// Change to encrypting the bit array created from the string version of keys
+		// MAC THE ENCRYPTION with k1, k2
+		cs255.localStorage.setItem(my_username+"-groupKeys",encodeForStorage(encryptedDB));
+		cs255.localStorage.setItem(my_username+"-groupKeysMAC",encodeForStorage(DBMac));
 	}
 }
 
@@ -135,7 +159,7 @@ function LoadKeys() {
 		var encryptedDBKey = cs255.localStorage.getItem(my_username+"-encryptedDBKey");
 		
 		if(encryptedDBKey == null) {
-			encryptedDBKey = decodeFromStorage(encryptedDBKey);
+			//encryptedDBKey = decodeFromStorage(encryptedDBKey);
 			
 			var password = prompt("Please create a password for your database: ");
 			var salt = GetRandomValues(4);
@@ -145,8 +169,6 @@ function LoadKeys() {
 			
 			var masterCipher = new sjcl.cipher.aes(DBKey);
 			var n0 = [0, 0, 0, 0];
-			var n1 = [0,0,0,1];
-			var n2 = [0,0,0,2];
 			
 			var encryptKey = masterCipher.encrypt(n0);
 			
@@ -174,6 +196,7 @@ function LoadKeys() {
 				var n0 = [0, 0, 0, 0];
 				var n1 = [0,0,0,1];
 				var n2 = [0,0,0,2];
+				var n3 = [0,0,0,3];
 			
 				var encryptKey = masterCipher.encrypt(n0);
 				var cipher = new sjcl.cipher.aes(encryptKey);
@@ -198,16 +221,38 @@ function LoadKeys() {
 					}
 				}
 				if(keysMatch) {
+					
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
+					var DBCipherKey = masterCipher.encrypt(n1);
+					var DBCipher = new sjcl.cipher.aes(DBCipherKey);
+					var k1 = masterCipher.encrypt(n2);
+					var k2 = masterCipher.encrypt(n3);
+					
 					// TODO: Generate k1 and k2 from DBKey
 					// TODO: Get groupKeys MAC from storage
 					// TODO: Verify groupKeys MAC with k1 and k2
 					
 					if(encryptedGroupKeys != null) {
 						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
-						for(var group in encryptedGroupKeys) {
-							keys[group] = encodeForStorage(cipher.decrypt(encryptedGroupKeys[group]));
+						alert("encryptedGroupKeys: " +encryptedGroupKeys +"\n length: " +encryptedGroupKeys.length);
+						
+						if(encryptedGroupKeys.length == 0) return;
+						var keysMapEncoding = [];
+						for(var i = 0; i < encryptedGroupKeys.length; i+=4) {
+							var encodingBlock = [];
+							for(var j = 0; j < 4; j++) {
+								encodingBlock[j]=encryptedGroupKeys[i+j];
+							}
+							var decryptedBlock = DBCipher.decrypt(encodingBlock);
+							for(var j=0; j < 4; j++) {
+								keysMapEncoding.push(decryptedBlock[j]);
+							}
 						}
+						alert("keysMapEncoding.length: "+keysMapEncoding.length);
+						var paddedDB = sjcl.codec.utf8String.fromBits(keysMapEncoding);
+						alert("paddedDB: " + paddedDB);
+						
+						keys = decodeFromStorage(removePad(paddedDB));	
 					}
 					sessionStorage.setItem(my_username+"-DBKey",encodeForStorage(tempDBKey));
 					
@@ -224,6 +269,8 @@ function LoadKeys() {
 		// TODO: Generate k1 and k2 from DBKey/
 		// TODO: Get groupKeys MAC from storage
 		// TODO: Verify groupKeys MAC with k1 and k2
+		
+		// CHANGE: decrypt encrypted group keys as one map
 		if(encryptedGroupKeys != null) { // AND VERIFIED
 			encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
 			for(var group in encryptedGroupKeys) {
@@ -252,7 +299,7 @@ function CBCMac(k1, k2, ciphertext) {
 	var xorWith = [0,0,0,0];
 	for(var i = 0; i < ciphertext.length; i+=4) {
 		var currentBlock = [];
-		for(int j = 0; j < 4; j++) { 
+		for(var j = 0; j < 4; j++) { 
 			if(i+j < ciphertext.length) {
 				currentBlock[j] = ciphertext[i+j];
 			} else if(i+j == ciphertext.length) {
@@ -283,6 +330,24 @@ function VerifyMac(hash, k1, k2, ciphertext) {
 		}
 	}
 	return true;
+}
+
+
+// Parameter: padded string
+// returns string with 10...0 pad removed
+function removePad(message) {
+	var result = "";
+	var add = false;
+	for(var i = message.length - 1; i >= 0; i--) {
+		if(add) {
+			result = message[i] + result;
+		}
+		if(message[i] == '1') {
+			add = true;
+		}
+		
+	}
+	return result;
 }
 
 // Parameter: string message
