@@ -184,33 +184,29 @@ function LoadKeys() {
 			var salt = GetRandomValues(4);
 			DBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 			var paddedPassword = padTo128Bits(password);
-			var passwordArray = flattenArray(paddedPassword);
-			
 			
 			sessionStorage.setItem(my_username+"-DBKey", encodeForStorage(DBKey));
 			
 			var masterCipher = new sjcl.cipher.aes(DBKey);
-			var n0 = [0,0,0,0];
+			var n0 = [0,0,0,0]; // key for encrypting password
+			var n4 = [0,0,0,4]; // E(password) MAC key 1
+			var n5 = [0,0,0,5]; // E(password) MAC key 2
 			
-			
-			
-			
-			
-			var n4 = [0,0,0,4];
-			
-			var k1 = masterCipher.encrypt(n0);
-			var k2 = masterCipher.encrypt(n4);
-			
-			var passwordHash = CBCMac(k1, k2, passwordArray);
+			var encryptKey = masterCipher.encrypt(n0);
+			var k1 = masterCipher.encrypt(n4);
+			var k2 = masterCipher.encrypt(n5);
 			
 				
-			//var cipher = new sjcl.cipher.aes(encryptKey);
+			var cipher = new sjcl.cipher.aes(encryptKey);
 		
-			//encryptedDBKey = [];
-			//for(var i = 0; i < paddedPassword.length; i++) {
-			//	var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
-			//	encryptedDBKey.push(encryptedDBKeyBlock);
-			//}
+			encryptedDBKey = [];
+			for(var i = 0; i < paddedPassword.length; i++) {
+				var encryptedDBKeyBlock = cipher.encrypt(paddedPassword[i]);
+				encryptedDBKey.push(encryptedDBKeyBlock);
+			}
+		
+			encryptedDBKey = flattenArray(encryptedDBKey);
+			var passwordHash = CBCMac(k1, k2, encryptedDBKey);
 			
 			cs255.localStorage.setItem(my_username+"-salt",encodeForStorage(salt));
 			cs255.localStorage.setItem(my_username+"-encryptedDBKey",encodeForStorage(passwordHash));
@@ -225,44 +221,47 @@ function LoadKeys() {
 				var tempDBKey = sjcl.misc.pbkdf2(password, salt, null, 128, null);
 				var masterCipher = new sjcl.cipher.aes(tempDBKey);
 				
-				var n0 = [0, 0, 0, 0];
-				var n1 = [0,0,0,1];
-				var n2 = [0,0,0,2];
-				var n3 = [0,0,0,3];
-				var n4 = [0,0,0,4];
+				var n0 = [0,0,0,0]; // key for encrypting password
+				var n1 = [0,0,0,1]; // database encrypting key
+				var n2 = [0,0,0,2]; // E(database) MAC key 1
+				var n3 = [0,0,0,3]; // E(database) MAC key 2
+				var n4 = [0,0,0,4]; // E(password) MAC key 1
+				var n5 = [0,0,0,5]; // E(password) MAC key 2
 				
 				var tempPaddedPassword = padTo128Bits(password);
 				var passwordArray = flattenArray(tempPaddedPassword);
+
+				//var keysMatch = VerifyMac(encryptedDBKey, k0, k4, passwordArray);
 				
-				
-				var k0 = masterCipher.encrypt(n0);
+				var encryptKey = masterCipher.encrypt(n0);
 				var k4 = masterCipher.encrypt(n4);
-				var keysMatch = VerifyMac(encryptedDBKey, k0, k4, passwordArray);
+				var k5 = masterCipher.encrypt(n5);
+				var cipher = new sjcl.cipher.aes(encryptKey);
+				var paddedTempPassword = padTo128Bits(password);
 				
-				//var encryptKey = masterCipher.encrypt(n0);
-				//var cipher = new sjcl.cipher.aes(encryptKey);
-				//var paddedTempPassword = padTo128Bits(password);
+				var encryptedTempDBKey =[];
+				for(var i=0; i< paddedTempPassword.length; i++) {
+					var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
+					encryptedTempDBKey.push(encryptedBlock);
+				}
+				encryptedTempDBKey = flattenArray(encryptedTempDBKey);
+				var keysMatch = VerifyMac(encryptedDBKey, k4, k5, encryptedTempDBKey);
 				
-				//var encryptedTempDBKey =[];
-				//for(var i=0; i< paddedTempPassword.length; i++) {
-				//	var encryptedBlock = cipher.encrypt(paddedTempPassword[i]);
-				//	encryptedTempDBKey.push(encryptedBlock);
-				//}
-				
-				//var keysMatch = true;
-				//if(encryptedDBKey.length != encryptedTempDBKey.length) {
-				//	keysMatch = false;
-				//} else {
-				//	for(var i=0 ; i< encryptedTempDBKey.length; i++) {
-				//		for(var j = 0; j < 4; j++) {
-				//			if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
-				//				keysMatch = false;
-				//			}
-				//		}
-				//	}
-				//}
-				if(keysMatch) {
-					
+				/*
+				var keysMatch = true;
+				if(encryptedDBKey.length != encryptedTempDBKey.length) {
+					keysMatch = false;
+				} else {
+					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
+						for(var j = 0; j < 4; j++) {
+							if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
+								keysMatch = false;
+							}
+						}
+					}
+				}
+				*/
+				if(keysMatch) {	
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
 					var DBCipherKey = masterCipher.encrypt(n1);
 					var DBCipher = new sjcl.cipher.aes(DBCipherKey);
