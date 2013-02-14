@@ -65,7 +65,6 @@ function Encrypt(plainText, group) {
 	
 	
 	var finalresult =  sjcl.codec.base64.fromBits(output,1,0);
-	//alert("encrypt returning: " + finalresult);
 	return finalresult;
 	
 }
@@ -79,7 +78,6 @@ function Encrypt(plainText, group) {
 function Decrypt(cipherText, group) {
 
 	assert(my_username != undefined);
-	//alert(cipherText);
 	
 	var bits = sjcl.codec.base64.toBits(cipherText,0);
     var hash = bits.slice(0,4);
@@ -94,7 +92,7 @@ function Decrypt(cipherText, group) {
 	
 	var IVCopy = initializationVector.slice(0);
 	IVCopy[3] = IVCopy[3] + length;
-	//store maccipher as everything in pits except the last 4 blocks
+	//store maccipher as everything in bits except the last 4 blocks
 	var groupKey = decodeFromStorage(keys[group]);
 	var cipher = new sjcl.cipher.aes(groupKey);
 	
@@ -230,8 +228,6 @@ function LoadKeys() {
 				
 				var tempPaddedPassword = padTo128Bits(password);
 				var passwordArray = flattenArray(tempPaddedPassword);
-
-				//var keysMatch = VerifyMac(encryptedDBKey, k0, k4, passwordArray);
 				
 				var encryptKey = masterCipher.encrypt(n0);
 				var k4 = masterCipher.encrypt(n4);
@@ -247,30 +243,12 @@ function LoadKeys() {
 				encryptedTempDBKey = flattenArray(encryptedTempDBKey);
 				var keysMatch = VerifyMac(encryptedDBKey, k4, k5, encryptedTempDBKey);
 				
-				/*
-				var keysMatch = true;
-				if(encryptedDBKey.length != encryptedTempDBKey.length) {
-					keysMatch = false;
-				} else {
-					for(var i=0 ; i< encryptedTempDBKey.length; i++) {
-						for(var j = 0; j < 4; j++) {
-							if(encryptedTempDBKey[i][j] != encryptedDBKey[i][j]) {
-								keysMatch = false;
-							}
-						}
-					}
-				}
-				*/
 				if(keysMatch) {	
 					var encryptedGroupKeys = cs255.localStorage.getItem(my_username+"-groupKeys");
 					var DBCipherKey = masterCipher.encrypt(n1);
 					var DBCipher = new sjcl.cipher.aes(DBCipherKey);
 					var k1 = masterCipher.encrypt(n2);
 					var k2 = masterCipher.encrypt(n3);
-					
-					// Generate k1 and k2 from DBKey
-					// Get groupKeys MAC from storage
-					// Verify groupKeys MAC with k1 and k2
 					
 					if(encryptedGroupKeys != null) {
 						encryptedGroupKeys = decodeFromStorage(encryptedGroupKeys);
@@ -363,8 +341,6 @@ function decodeFromStorage(value) {
 // ciphertext: array of 32-bit words
 // returns: an array of 4 32-bit words
 function CBCMac(k1, k2, ciphertext) {
-	//alert("mac ciphertext: " + ciphertext);
-	
 	var cipher1 = new sjcl.cipher.aes(k1);
 	var cipher2 = new sjcl.cipher.aes(k2);
 	var xorWith = [0,0,0,0];
@@ -394,7 +370,6 @@ function CBCMac(k1, k2, ciphertext) {
 // ciphertext: array 32-bit words
 // returns true/false
 function VerifyMac(hash, k1, k2, ciphertext) {
-	//alert("verifying hash: " + hash);
 	var validHash = CBCMac(k1, k2, ciphertext);
 	for(var i = 0; i < 4; i++) {
 		if(validHash[i] != hash[i]) {
@@ -426,13 +401,10 @@ function removePad(message) {
 // Return value: an array of 128-bit blocks of data
 // an array of arrays of 4 32 bit elements
 function padTo128Bits(message) {
-	//alert("mess len: " + message.length + " mod 16: " + message.length %16);
 	var padLength = 16 - (message.length % 16);
-	// add 1 
 	message += '1';
 	for(var i = 1; i < padLength; i++) {
 		message += '0';
-		// add 0
 	}
 	var paddedMessage = [];
 	var bits = sjcl.codec.utf8String.toBits(message);
@@ -444,14 +416,7 @@ function padTo128Bits(message) {
 		}
 		paddedMessage.push(block);
 	}
-	
-	
-	//alert("paddedMessage length in blocks: " + paddedMessage.length);
 	return paddedMessage;
-	// divide message into 4 byte chunks
-	// add each as array to padded message
-
-
 }
 
 function flattenArray(blockArray) {
